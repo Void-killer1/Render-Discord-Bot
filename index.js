@@ -1,23 +1,27 @@
-const Discord = require('discord.js-selfbot-v13');
+const { Client, GatewayIntentBits } = require('discord.js');
 const express = require('express');
-const client = new Discord.Client();
 const app = express();
 
-// Render'ın portunu dinle veya 3000 kullan
-const port = process.env.PORT || 3000;
+// Cron-job.org pingleri için HTTP sunucusu
+app.get('/', (req, res) => res.send('Bot 7/24 Aktif!'));
+app.listen(process.env.PORT || 3000, () => console.log("Ping sunucusu hazır."));
 
-// Cron-job.org için HTTP sunucusu
-app.get('/', (req, res) => {
-  res.send('Bot Aktif!');
-});
-
-app.listen(port, () => {
-  console.log(`Sunucu ${port} portunda hazır.`);
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 client.on('ready', () => {
-  console.log(`${client.user.tag} olarak giriş yapıldı!`);
+  console.log(`Bot ${client.user.tag} olarak giriş yaptı!`);
 });
 
-// Token'ı Render Environment Variables kısmına ekle
+client.on('messageCreate', (message) => {
+  if (message.content === '!ping') {
+    message.reply('Pong! 🏓');
+  }
+});
+
 client.login(process.env.TOKEN);
