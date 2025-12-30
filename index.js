@@ -1,58 +1,90 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
+const mongoose = require('mongoose');
+const session = require('express-session');
+const passport = require('passport');
+const { Strategy } = require('passport-discord');
+const path = require('path');
+const Guild = require('./models/Guild');
 
+const client = new Client({ intents: [3276799] });
 const app = express();
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
-  ]
+
+// Database
+mongoose.connect(process.env.MONGO_URI);
+
+// View Engine
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(express.urlencoded({ extended: true }));
+
+// Auth
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
+passport.use(new Strategy({
+  clientID: process.env.CLIENT_ID,
+  clientSecret: process.env.CLIENT_SECRET,
+  callbackURL: process.env.CALLBACK_URL,
+  scope: ['identify', 'guilds']
+}, (at, rt, profile, done) => done(null, profile)));
+
+app.use(session({ secret: 'guard-bot-secret', resave: false, saveUninitialized: false }));
+app.use(passport.initialize());
+app.use(passport.session());
+
+// --- ROUTES ---
+app.get('/', (req, res) => res.render('index', { user: req.user }));
+app.get('/login', passport.authenticate('discord'));
+app.get('/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => res.redirect('/dashboard'));
+
+app.get('/dashboard', (req, res) => {
+  if (!req.user) return res.redirect('/login');
+  const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
+  res.render('dashboard', { user: req.user, guilds: adminGuilds });
 });
 
-// Render ve Cron-job.org için canlı tutma sistemi
-app.get('/', (req, res) => res.send('Bot Durumu: Aktif 🚀'));
-app.listen(process.env.PORT || 3000, () => console.log("Ping sunucusu hazır."));
+app.get('/manage/:id', async (req, res) => {
+  if (!req.user) return res.redirect('/login');
+  const isAuth = req.user.guilds.find(g => g.id === req.params.id && (g.permissions & 0x8) === 0x8);
+  if (!isAuth) return res.send("Yetkin yok!");
 
-client.on('ready', () => {
-  console.log(`${client.user.tag} olarak giriş yapıldı!`);
-  client.user.setActivity('!yardım | Render 7/24');
+  let data = await Guild.findOne({ guildId: req.params.id }) || await Guild.create({ guildId: req.params.id });
+  res.render('manage', { guild: isAuth, data });
 });
 
-client.on('messageCreate', async (message) => {
-  if (message.author.bot || !message.content.startsWith('!')) return;
+app.post('/manage/:id', async (req, res) => {
+  await Guild.findOneAndUpdate(
+    { guildId: req.params.id },
+    { 
+      kufurEngel: !!req.body.kufur, 
+      linkEngel: !!req.body.link,
+      reklamEngel: !!req.body.reklam 
+    }
+  );
+  res.redirect(`/manage/${req.params.id}`);
+});
 
-  const args = message.content.slice(1).trim().split(/ +/);
-  const command = args.shift().toLowerCase();
+// --- BOT GUARD ---
+const yasakli = ["amk", "mal", "aq", "orospu", "pezevenk"]; // Önceki listenin tamamını buraya koy
 
-  switch (command) {
-    case 'ping':
-      message.reply(`🏓 Pong! Gecikme: **${client.ws.ping}ms**`);
-      break;
+client.on('messageCreate', async (msg) => {
+  if (!msg.guild || msg.author.bot || msg.member.permissions.has(PermissionFlagsBits.ManageMessages)) return;
+  
+  const data = await Guild.findOne({ guildId: msg.guild.id });
+  if (!data) return;
 
-    case 'sil':
-      if (!message.member.permissions.has('ManageMessages')) return message.reply('Yetkin yok!');
-      const miktar = parseInt(args[0]);
-      if (!miktar || miktar < 1 || miktar > 100) return message.reply('1-100 arası sayı gir!');
-      await message.channel.bulkDelete(miktar + 1);
-      message.channel.send(`✅ ${miktar} mesaj temizlendi.`).then(m => setTimeout(() => m.delete(), 3000));
-      break;
+  const content = msg.content.toLowerCase();
+  let sil = false;
 
-    case 'yardım':
-      const yardımEmbed = new EmbedBuilder()
-        .setColor(0x0099FF)
-        .setTitle('🤖 Bot Komutları')
-        .setDescription('`!ping` - Gecikmeyi ölçer\n`!sil [sayı]` - Mesajları temizler\n`!profil` - Bilgilerini gösterir');
-      message.reply({ embeds: [yardımEmbed] });
-      break;
+  if (data.kufurEngel && yasakli.some(k => content.includes(k))) sil = true;
+  if (data.linkEngel && /(https?:\/\/|www\.)/.test(content)) sil = true;
 
-    case 'profil':
-      const user = message.mentions.users.first() || message.author;
-      message.reply(`👤 **Kullanıcı:** ${user.username}\n🆔 **ID:** ${user.id}`);
-      break;
+  if (sil) {
+    msg.delete().catch(() => {});
+    msg.channel.send(`⚠️ **${msg.author.username}**, Yasaklı içerik tespit edildi!`).then(m => setTimeout(() => m.delete(), 2000));
   }
 });
 
-// Render'da Environment Variables kısmına TOKEN eklemeyi unutma!
 client.login(process.env.TOKEN);
+app.listen(process.env.PORT || 3000);
