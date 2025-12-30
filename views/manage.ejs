@@ -1,0 +1,11 @@
+<h2><%= guild.name %> Ayarları</h2>
+<form method="POST">
+  <label>
+    <input type="checkbox" name="kufur" <%= data.kufurEngel ? 'checked' : '' %>> Küfür Engel
+  </label><br>
+  <label>
+    <input type="checkbox" name="link" <%= data.linkEngel ? 'checked' : '' %>> Link Engel
+  </label><br>
+  <button type="submit">Ayarları Kaydet</button>
+</form>
+<a href="/dashboard">Geri Dön</a>
