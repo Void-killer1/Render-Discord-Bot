@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -16,6 +16,7 @@ const Guild = mongoose.model('Guild', new mongoose.Schema({
 const client = new Client({ intents: [3276799] });
 const app = express();
 
+// MongoDB Bağlantısı
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Bağlantısı Başarılı"))
   .catch(err => console.error("❌ MongoDB Hatası:", err));
@@ -23,6 +24,15 @@ mongoose.connect(process.env.MONGO_URI)
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
+app.set('trust proxy', 1); // Render için kritik ayar
+
+// Oturum Yönetimi
+app.use(session({
+  secret: 'guard-secret-xyz-123',
+  resave: true,
+  saveUninitialized: true,
+  cookie: { secure: true, maxAge: 60000 * 60 * 24 } // 24 saatlik güvenli cookie
+}));
 
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
@@ -32,16 +42,35 @@ passport.use(new Strategy({
   clientSecret: process.env.CLIENT_SECRET,
   callbackURL: process.env.CALLBACK_URL,
   scope: ['identify', 'guilds']
-}, (at, rt, profile, done) => done(null, profile)));
+}, (at, rt, profile, done) => {
+    process.nextTick(() => done(null, profile));
+}));
 
-app.use(session({ secret: 'guard-secret-123', resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
 app.use(passport.session());
 
 // --- DASHBOARD ROTALARI ---
 app.get('/', (req, res) => res.render('index', { user: req.user }));
-app.get('/login', passport.authenticate('discord'));
-app.get('/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => res.redirect('/dashboard'));
+
+app.get('/login', (req, res, next) => {
+    // Eski oturum kalıntılarını temizle
+    req.session.destroy(() => {
+        passport.authenticate('discord')(req, res, next);
+    });
+});
+
+app.get('/callback', (req, res, next) => {
+  passport.authenticate('discord', (err, user) => {
+    if (err || !user) {
+      console.error("Auth Hatası:", err);
+      return res.redirect('/'); 
+    }
+    req.logIn(user, (err) => {
+      if (err) return next(err);
+      res.redirect('/dashboard');
+    });
+  })(req, res, next);
+});
 
 app.get('/dashboard', (req, res) => {
   if (!req.user) return res.redirect('/login');
@@ -59,6 +88,7 @@ app.get('/manage/:id', async (req, res) => {
 });
 
 app.post('/manage/:id', async (req, res) => {
+  if (!req.user) return res.redirect('/login');
   await Guild.findOneAndUpdate({ guildId: req.params.id }, { 
     kufurEngel: !!req.body.kufur,
     linkEngel: !!req.body.link 
@@ -67,7 +97,7 @@ app.post('/manage/:id', async (req, res) => {
 });
 
 // --- GUARD SİSTEMİ ---
-const yasakli = ["amk", "amınakoyayım", "mal", "şerefsiz", "it", "köpek", "salak", "gerizekalı", "orospu", "faişe", "angut", "aq", "oe", "pezevenk", "œ", "31", "meme", "yarak", "yarrak", "göt", "sik", "siktir"];
+const yasakli = ["amk", "amınakoyayım", "mal", "şerefsiz", "it", "köpek", "salak", "gerizekalı", "orospu", "faişe", "angut", "aq", "oe", "pezevenk", "31", "meme", "yarak", "yarrak", "göt", "sik", "siktir"];
 
 client.on('messageCreate', async (msg) => {
   if (!msg.guild || msg.author.bot || msg.member.permissions.has(PermissionFlagsBits.Administrator)) return;
@@ -75,14 +105,19 @@ client.on('messageCreate', async (msg) => {
   const data = await Guild.findOne({ guildId: msg.guild.id });
   if (!data) return;
 
-  const cleanContent = msg.content.toLowerCase().replace(/\s+/g, ''); // "a m k" yazsa bile yakalar
+  const content = msg.content.toLowerCase();
+  const cleanContent = content.replace(/\s+/g, '');
+
+  if (data.linkEngel && /(https?:\/\/|www\.|discord\.gg)/.test(content)) {
+    await msg.delete().catch(() => {});
+    return msg.channel.send(`🚫 **${msg.author.username}**, link yasak!`).then(m => setTimeout(() => m.delete(), 3000));
+  }
   
   if (data.kufurEngel && yasakli.some(k => cleanContent.includes(k))) {
     await msg.delete().catch(() => {});
-    return msg.channel.send(`⚠️ **${msg.author.username}**, sunucuda küfür yasak!`).then(m => setTimeout(() => m.delete(), 3000));
+    return msg.channel.send(`⚠️ **${msg.author.username}**, küfür yasak!`).then(m => setTimeout(() => m.delete(), 3000));
   }
 });
 
 client.login(process.env.TOKEN);
-app.listen(process.env.PORT || 3000);
-      
+app.listen(process.env.PORT || 3000, () => console.log("🚀 Server hazır!"));
