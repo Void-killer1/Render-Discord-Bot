@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -6,7 +6,7 @@ const passport = require('passport');
 const { Strategy } = require('passport-discord');
 const path = require('path');
 
-// Şemayı dosya hatası olmaması için buraya gömüyoruz (Kısa ve öz)
+// MongoDB Şeması
 const Guild = mongoose.model('Guild', new mongoose.Schema({
   guildId: { type: String, required: true, unique: true },
   kufurEngel: { type: Boolean, default: false },
@@ -16,15 +16,14 @@ const Guild = mongoose.model('Guild', new mongoose.Schema({
 const client = new Client({ intents: [3276799] });
 const app = express();
 
-// MongoDB Bağlantısı
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Bağlantısı Başarılı"))
   .catch(err => console.error("❌ MongoDB Hatası:", err));
 
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 
-// Auth Ayarları
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
@@ -35,37 +34,55 @@ passport.use(new Strategy({
   scope: ['identify', 'guilds']
 }, (at, rt, profile, done) => done(null, profile)));
 
-app.use(session({ secret: 'secret-key', resave: false, saveUninitialized: false }));
+app.use(session({ secret: 'guard-secret-123', resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- ROTALAR (ROUTES) ---
-app.get('/', (req, res) => res.send('Bot ve Panel Çalışıyor! <a href="/login">Giriş Yap</a>'));
-
+// --- DASHBOARD ROTALARI ---
+app.get('/', (req, res) => res.render('index', { user: req.user }));
 app.get('/login', passport.authenticate('discord'));
-
-app.get('/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => {
-  res.redirect('/dashboard');
-});
+app.get('/callback', passport.authenticate('discord', { failureRedirect: '/' }), (req, res) => res.redirect('/dashboard'));
 
 app.get('/dashboard', (req, res) => {
   if (!req.user) return res.redirect('/login');
   const adminGuilds = req.user.guilds.filter(g => (g.permissions & 0x8) === 0x8);
-  res.send(`<h1>Hoş geldin ${req.user.username}</h1>` + adminGuilds.map(g => `<p>${g.name} - <a href="/manage/${g.id}">Yönet</a></p>`).join(''));
+  res.render('dashboard', { user: req.user, guilds: adminGuilds, client });
 });
 
 app.get('/manage/:id', async (req, res) => {
   if (!req.user) return res.redirect('/login');
-  const guildId = req.params.id;
-  let data = await Guild.findOne({ guildId }) || await Guild.create({ guildId });
-  res.send(`<h2>Sunucu: ${guildId}</h2><form method="POST">Küfür Engel: <input type="checkbox" name="kufur" ${data.kufurEngel ? 'checked' : ''}><button>Kaydet</button></form>`);
+  const isAuth = req.user.guilds.find(g => g.id === req.params.id && (g.permissions & 0x8) === 0x8);
+  if (!isAuth || !client.guilds.cache.has(req.params.id)) return res.redirect('/dashboard');
+
+  let data = await Guild.findOne({ guildId: req.params.id }) || await Guild.create({ guildId: req.params.id });
+  res.render('manage', { guild: isAuth, data });
 });
 
 app.post('/manage/:id', async (req, res) => {
-  await Guild.findOneAndUpdate({ guildId: req.params.id }, { kufurEngel: !!req.body.kufur });
+  await Guild.findOneAndUpdate({ guildId: req.params.id }, { 
+    kufurEngel: !!req.body.kufur,
+    linkEngel: !!req.body.link 
+  });
   res.redirect('/dashboard');
 });
 
-// Bot Girişi
-client.login(process.env.TOKEN).catch(err => console.error("❌ Bot Token Hatası:", err));
+// --- GUARD SİSTEMİ ---
+const yasakli = ["amk", "amınakoyayım", "mal", "şerefsiz", "it", "köpek", "salak", "gerizekalı", "orospu", "faişe", "angut", "aq", "oe", "pezevenk", "œ", "31", "meme", "yarak", "yarrak", "göt", "sik", "siktir"];
+
+client.on('messageCreate', async (msg) => {
+  if (!msg.guild || msg.author.bot || msg.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+  
+  const data = await Guild.findOne({ guildId: msg.guild.id });
+  if (!data) return;
+
+  const cleanContent = msg.content.toLowerCase().replace(/\s+/g, ''); // "a m k" yazsa bile yakalar
+  
+  if (data.kufurEngel && yasakli.some(k => cleanContent.includes(k))) {
+    await msg.delete().catch(() => {});
+    return msg.channel.send(`⚠️ **${msg.author.username}**, sunucuda küfür yasak!`).then(m => setTimeout(() => m.delete(), 3000));
+  }
+});
+
+client.login(process.env.TOKEN);
 app.listen(process.env.PORT || 3000);
+      
