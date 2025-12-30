@@ -1,11 +1,37 @@
-<h2><%= guild.name %> Ayarları</h2>
-<form method="POST">
-  <label>
-    <input type="checkbox" name="kufur" <%= data.kufurEngel ? 'checked' : '' %>> Küfür Engel
-  </label><br>
-  <label>
-    <input type="checkbox" name="link" <%= data.linkEngel ? 'checked' : '' %>> Link Engel
-  </label><br>
-  <button type="submit">Ayarları Kaydet</button>
-</form>
-<a href="/dashboard">Geri Dön</a>
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-white flex items-center justify-center min-h-screen p-4">
+    <div class="bg-slate-800 w-full max-w-md p-8 rounded-3xl shadow-2xl border border-slate-700">
+        <a href="/dashboard" class="text-slate-400 hover:text-white mb-6 inline-block"><i class="fas fa-arrow-left"></i> Geri Dön</a>
+        <h2 class="text-2xl font-bold mb-8 text-blue-400">Sunucu Ayarları</h2>
+        
+        <form method="POST" class="space-y-6">
+            <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded-2xl">
+                <span class="font-medium"><i class="fas fa-comment-slash mr-2 text-red-400"></i> Küfür Engel</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="kufur" class="sr-only peer" <%= data.kufurEngel ? 'checked' : '' %>>
+                    <div class="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+            </div>
+
+            <div class="flex items-center justify-between p-4 bg-slate-700/50 rounded-2xl">
+                <span class="font-medium"><i class="fas fa-link mr-2 text-blue-400"></i> Link Engel</span>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="link" class="sr-only peer" <%= data.linkEngel ? 'checked' : '' %>>
+                    <div class="w-11 h-6 bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+            </div>
+
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition shadow-lg shadow-blue-900/40">
+                Değişiklikleri Kaydet
+            </button>
+        </form>
+    </div>
+</body>
+</html>
